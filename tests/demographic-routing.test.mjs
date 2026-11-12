@@ -502,11 +502,11 @@ test("home lists public studies across all dates after demographics and links to
   assert.match(html, /id="my-progress-heading"/);
   assert.doesNotMatch(html, /<li>|href="\/study\//);
   const categoryHtml = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category: "active" }) }));
-  assert.match(categoryHtml, /Study (?:<!-- -->)?1</);
-  assert.match(categoryHtml, /Study (?:<!-- -->)?5</);
-  assert.doesNotMatch(categoryHtml, /study-1|Description for study 1/);
+  assert.match(categoryHtml, /href="\/study\/1"[^>]*>1<\/a>/);
+  assert.match(categoryHtml, /href="\/study\/5"[^>]*>2<\/a>/);
+  assert.doesNotMatch(categoryHtml, /Description for study 1/);
   assert.deepEqual([...categoryHtml.matchAll(/dateTime="([^"]+)"/g)].map((match) => match[1]), [past, future]);
-  assert.match(categoryHtml, /UTC<\/time>/);
+  assert.doesNotMatch(categoryHtml, /UTC<\/time>|AM<\/time>|PM<\/time>/);
   assert.match(categoryHtml, /No start date/);
   assert.match(categoryHtml, /No end date/);
   assert.deepEqual([...categoryHtml.matchAll(/href="(\/study\/\d+)"/g)].map((match) => match[1]), ["/study/1", "/study/5"]);
@@ -580,7 +580,7 @@ test("home marks only the current user's started-and-ended studies Completed", a
   const html = renderToStaticMarkup(await scenario.home({}));
   assert.doesNotMatch(html, /<li>/);
   const activeHtml = scenario.dashboard.select("Active");
-  const cards = [...activeHtml.matchAll(/<li>(.*?)<\/li>/g)].map((match) => match[1]);
+  const cards = [...activeHtml.match(/<tbody>(.*?)<\/tbody>/)[1].matchAll(/<tr>(.*?)<\/tr>/g)].map((match) => match[1]);
   assert.equal(cards.length, 2);
   assert.ok(cards.every((card) => card.includes("Active")));
   assert.deepEqual(scenario.dashboard.studies.map(({ id, status }) => [id, status]), [[1, "Completed"], [2, "Active"], [3, "Active"]]);
@@ -712,10 +712,16 @@ test("past completions remain linked, while missed and upcoming cards have no li
   renderToStaticMarkup(await scenario.home({}));
   for (const [index, status] of ["Completed", "Missed", "Upcoming", "Active"].entries()) {
     const html = scenario.dashboard.select(status);
-    const cards = [...html.matchAll(/<li>(.*?)<\/li>/g)].map((match) => match[1]);
+    const cards = [...html.match(/<tbody>(.*?)<\/tbody>/)[1].matchAll(/<tr>(.*?)<\/tr>/g)].map((match) => match[1]);
     assert.equal(cards.length, 1);
-    assert.match(cards[0], new RegExp(`>${status}<`));
-    assert.match(cards[0], new RegExp(`Study ${index + 1}<`));
+    assert.match(html, /class="progress-study-total">Total Studies: 1<\/p>/);
+    assert.deepEqual([...html.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((match) => match[1]), ["Study #", "Available From", "Available Until", "Status"]);
+    assert.equal([...cards[0].matchAll(/<td(?: |>)|<th scope="row"/g)].length, 4);
+    assert.match(html, /Back to My Progress/);
+    assert.doesNotMatch(html, /class="progress-eyebrow"|Study Name/);
+    assert.doesNotMatch(html.replace(/dateTime="[^"]*"/g, ""), /\d{1,2}:\d{2}|UTC|EST|EDT/);
+    assert.match(cards[0], new RegExp(`>${status === "Missed" ? "Past" : status}<`));
+    assert.match(cards[0], /scope="row" class="progress-table-number"[^>]*>(?:<a[^>]*>)?1</);
     if (status === "Completed" || status === "Active") {
       assert.match(cards[0], new RegExp(`href="/study/${index + 1}"`));
     } else {
@@ -740,7 +746,8 @@ test("dashboard retrieves studies and current-user completions beyond the first 
   renderToStaticMarkup(await scenario.home({}));
   assert.equal(scenario.dashboard.studies.length, 1005);
   const html = scenario.dashboard.select("Completed");
-  assert.equal([...html.matchAll(/<li>/g)].length, 1005);
+  assert.equal([...html.match(/<tbody>(.*?)<\/tbody>/)[1].matchAll(/<tr>/g)].length, 1005);
+  assert.match(html, /class="progress-study-total">Total Studies: 1005<\/p>/);
   assert.equal([...html.matchAll(/>Completed</g)].length, 1005);
   assert.equal(scenario.studyLoads, 2);
 });
@@ -770,8 +777,8 @@ test("progress map has accurate counts and category links, with no study list", 
     assert.match(html, new RegExp(`>${category} Studies<`));
     assert.match(html, /href="\/"[^>]*>.*Back to My Progress<\/a>/);
     assert.doesNotMatch(html, /aria-label="Study categories"/);
-    const ids = [...html.matchAll(/<h2[^>]*>Study (\d+)<\/h2>/g)].map((match) => Number(match[1]));
-    assert.deepEqual(ids, studies.filter((study) => study.status === category).map((study) => study.id));
+    const numbers = [...html.matchAll(/scope="row" class="progress-table-number"[^>]*>(?:<a[^>]*>)?(\d+)</g)].map((match) => Number(match[1]));
+    assert.deepEqual(numbers, studies.filter((study) => study.status === category).map((_, index) => index + 1));
   }
   const active = dashboard.select("Active");
   assert.match(active, /dateTime="2026-01-01T00:00:00Z"/);
@@ -785,12 +792,13 @@ test("empty category views have helpful messages and a back link", () => {
   const messages = {
     Completed: "Your first finish is still ahead.",
     Active: "Nothing to rate just now.",
-    Missed: "No missed studies here.",
+    Missed: "No missed studies to show yet.",
     Upcoming: "Nothing on the horizon yet.",
   };
   for (const [category, message] of Object.entries(messages)) {
     const html = dashboard.select(category);
     assert.ok(html.includes(message));
+    assert.match(html, /class="progress-study-total">Total Studies: 0<\/p>/);
     assert.match(html, /href="\/"[^>]*>.*Back to My Progress<\/a>/);
     assert.doesNotMatch(html, /<li>|href="\/study\//);
   }
@@ -811,4 +819,161 @@ test("category URLs open the right view and back links return to a list-free map
     assert.doesNotMatch(html, /<li>|study-category-heading/);
   }
   assert.deepEqual(scenario.captionLoads, []);
+});
+
+
+test("category tables show sequential linked numbers, date-only availability, and statuses", async () => {
+  const scenario = createScenario({ answered: [1, 2], studies: [
+    studyRow(91, { slug: "  Caption Comedy  " }),
+    studyRow(305, { slug: null }),
+    studyRow(407, { slug: "" }),
+  ] });
+  const html = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category: "active" }) }));
+  assert.deepEqual([...html.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((match) => match[1]), ["Study #", "Available From", "Available Until", "Status"]);
+  assert.deepEqual([...html.matchAll(/class="progress-table-number"[^>]*>(?:<a[^>]*>)?(\d+)</g)].map((match) => Number(match[1])), [1, 2, 3]);
+  assert.match(html, /href="\/study\/91"[^>]*>1<\/a>/);
+  assert.match(html, /href="\/study\/305"[^>]*>2<\/a>/);
+  assert.match(html, /href="\/study\/407"[^>]*>3<\/a>/);
+  assert.match(html, /role="region"[^>]*tabindex="0"/);
+  assert.match(html, /<caption class="sr-only">Active Studies/);
+  assert.doesNotMatch(html, /progress-study-list|<dl|<li>|Caption Comedy|Study Name|class="progress-eyebrow"/);
+});
+
+test("compact dates omit weekday labels and preserve timezone and original timestamps", () => {
+  const { LocalDateTime } = loadModule("src/components/LocalDateTime.tsx");
+  const React = require("react");
+  const value = "2026-11-10T19:05:00Z";
+  const full = renderToStaticMarkup(React.createElement(LocalDateTime, { value }));
+  const compact = renderToStaticMarkup(React.createElement(LocalDateTime, { value, format: "compact" }));
+  assert.match(full, /Tuesday/);
+  assert.doesNotMatch(compact, /Tuesday/);
+  assert.match(compact, /Nov 10, 2026/);
+  assert.match(compact, /7:05 PM UTC/);
+  assert.match(compact, /dateTime="2026-11-10T19:05:00Z"/);
+});
+
+
+test("Missed naming and category classification remain intact", () => {
+  const dashboard = createDashboardHarness();
+  const map = dashboard.render([{ ...studyRow(1), status: "Missed" }]);
+  const link = map.match(/<a[^>]*href="\/\?category=missed"[^>]*>(.*?)<\/a>/)[1];
+  assert.match(link, />Missed</);
+  assert.match(link, /class="progress-node-count">1</);
+  const past = dashboard.select("Missed");
+  assert.match(past, /id="study-category-heading">Missed Studies<\/h1>/);
+  assert.match(past, />Past</);
+  assert.doesNotMatch(past, /Past Studies|Not Applicable|href="\/study\/1"/);
+  assert.equal(dashboard.studies[0].status, "Missed");
+});
+
+
+test("date-only formatting hides times and timezones without changing timestamps", () => {
+  const { LocalDateTime } = loadModule("src/components/LocalDateTime.tsx");
+  const React = require("react");
+  const value = "2026-01-22T19:05:00Z";
+  const html = renderToStaticMarkup(React.createElement(LocalDateTime, { value, format: "date" }));
+  assert.equal(html, '<time dateTime="2026-01-22T19:05:00Z">Jan 22, 2026</time>');
+});
+
+
+test("past row labels require a matching unfinished start within valid availability bounds", () => {
+  const now = new Date("2026-11-10T12:00:00Z");
+  const study = studyRow(91, { start_datetime_utc: "2026-11-01T00:00:00Z", end_datetime_utc: "2026-11-05T00:00:00Z" });
+  const participation = { profile_id: profileId, study_id: 91, started_at: "2026-11-03T00:00:00Z", ended_at: null, completion_stats: null };
+  const label = (row = participation, availability = study, at = now) => participationModule.getPastStudyRowLabel(availability, row, profileId, at);
+  assert.equal(label(), "Missed");
+  for (const started_at of [study.start_datetime_utc, study.end_datetime_utc]) assert.equal(label({ ...participation, started_at }), "Missed");
+  assert.equal(label(participation, { ...study, start_datetime_utc: null }), "Missed");
+  assert.equal(label(null), "Past");
+  assert.equal(participationModule.getPastStudyRowLabel(study, undefined, profileId, now), "Past");
+  for (const changes of [
+    { profile_id: "another-participant" }, { study_id: 92 },
+    { started_at: "2026-10-31T23:59:59Z" }, { started_at: "2026-11-05T00:00:01Z" },
+    { started_at: "invalid" }, { started_at: "" },
+    { ended_at: "2026-11-04T00:00:00Z" }, { ended_at: "invalid" },
+    { completion_stats: completionStats },
+  ]) assert.equal(label({ ...participation, ...changes }), "Past");
+  for (const changes of [
+    { end_datetime_utc: null }, { end_datetime_utc: "invalid" },
+    { end_datetime_utc: now.toISOString() }, { end_datetime_utc: "2026-11-11T00:00:00Z" },
+    { start_datetime_utc: "invalid" }, { start_datetime_utc: "2026-11-06T00:00:00Z" },
+  ]) assert.equal(label(participation, { ...study, ...changes }), "Past");
+  assert.equal(label(participation, study, new Date("invalid")), "Past");
+});
+
+test("ordinary creation dates and missing activity never establish Not Applicable or Missed", () => {
+  const now = new Date("2026-11-10T12:00:00Z");
+  for (const created_at of ["2020-01-01T00:00:00Z", "2026-11-09T00:00:00Z", "invalid"]) {
+    const study = { ...studyRow(1, { end_datetime_utc: "2026-11-05T00:00:00Z" }), created_at, created_datetime_utc: created_at };
+    assert.equal(participationModule.getPastStudyRowLabel(study, null, profileId, now), "Past");
+  }
+});
+
+test("home uses actual participation evidence for row labels without changing categories or counts", async () => {
+  const start = new Date(Date.now() - 3 * 86400000).toISOString();
+  const during = new Date(Date.now() - 2 * 86400000).toISOString();
+  const end = new Date(Date.now() - 86400000).toISOString();
+  const scenario = createScenario({ answered: [1, 2],
+    studies: [1, 2, 3, 4, 5].map((id) => studyRow(id, { start_datetime_utc: start, end_datetime_utc: end })),
+    participations: [
+      { profile_id: profileId, study_id: 2, started_at: during, ended_at: null, completion_stats: null },
+      { profile_id: profileId, study_id: 3, started_at: "2000-01-01T00:00:00Z", ended_at: null, completion_stats: null },
+      { profile_id: "another-participant", study_id: 4, started_at: during, ended_at: null, completion_stats: null },
+      { profile_id: profileId, study_id: 5, started_at: during, ended_at: end, completion_stats: completionStats },
+    ],
+  });
+  const map = renderToStaticMarkup(await scenario.home({}));
+  const missedLink = map.match(/<a[^>]*href="\/\?category=missed"[^>]*>(.*?)<\/a>/)[1];
+  assert.match(missedLink, />Missed</);
+  assert.match(missedLink, /class="progress-node-count">4</);
+  assert.deepEqual(scenario.dashboard.studies.map(({ status }) => status), ["Missed", "Missed", "Missed", "Missed", "Completed"]);
+  const html = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category: "missed" }) }));
+  const labels = [...html.matchAll(/class="progress-table-status"[^>]*>([^<]+)</g)].map((match) => match[1]);
+  assert.deepEqual(labels, ["Past", "Missed", "Past", "Past"]);
+  assert.match(html, />Missed Studies</);
+  assert.doesNotMatch(html, /Not Applicable|href="\/study\//);
+  assert.deepEqual(scenario.captionLoads, []);
+});
+
+test("the table renders each past-study label without changing the Missed category count", () => {
+  const dashboard = createDashboardHarness();
+  // Presentation fixtures only; the production loader has no verified join-date source.
+  const labels = ["Not Applicable", "Missed", "Past"];
+  const studies = labels.map((pastStudyLabel, index) => ({ ...studyRow(index + 1), status: "Missed", pastStudyLabel }));
+  const map = dashboard.render(studies);
+  assert.match(map, /class="progress-node-count">3</);
+  const table = dashboard.select("Missed");
+  assert.deepEqual([...table.matchAll(/class="progress-table-status"[^>]*>([^<]+)</g)].map((match) => match[1]), labels);
+  assert.doesNotMatch(table, /href="\/study\//);
+});
+
+
+test("category presentation is applied directly to the rendered elements despite stale shared CSS", async () => {
+  const dashboard = createDashboardHarness();
+  dashboard.render([{ ...studyRow(1), status: "Active" }]);
+  const html = dashboard.select("Active");
+  const body = html.match(/<tbody>(.*?)<\/tbody>/)[1];
+  const styles = [...body.matchAll(/<(?:th|td)[^>]*style="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(styles.length, 4);
+  assert.equal(new Set(styles).size, 1, "all four body cells share the exact same presentation");
+  for (const declaration of ["color:var(--progress-ink)", "font-size:1rem", "font-weight:600", "text-align:center"]) assert.ok(styles[0].includes(declaration));
+  const headings = [...html.matchAll(/<th scope="col"[^>]*style="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(headings.length, 4);
+  for (const style of headings) {
+    assert.ok(style.includes("font-size:1.0625rem"));
+    assert.ok(style.includes("text-align:center"));
+    assert.ok(style.includes("background-color:var(--progress-table-header, #61452f)"));
+    assert.ok(style.includes("color:var(--progress-table-header-text, #fff8e8)"));
+  }
+  const back = html.match(/<a[^>]*class="progress-back"[^>]*>/)[0];
+  assert.match(back, /grid-column:1 \/ -1/);
+  assert.match(back, /background-color:var\(--progress-table-header, #61452f\)/);
+  assert.match(back, /color:var\(--progress-table-header-text, #fff8e8\)/);
+  assert.match(html, /class="progress-category-header" style="[^"]*text-align:center/);
+  const scenario = createScenario({ answered: [1, 2], studies: [studyRow(1)] });
+  const page = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category: "active" }) }));
+  assert.match(page, /class="progress-content" style="[^"]*width:100%;padding-top:24px;padding-inline:clamp\(24px, 2vw, 32px\)/);
+  const map = renderToStaticMarkup(await scenario.home({}));
+  assert.match(map, /class="progress-content">/);
+  assert.doesNotMatch(map, /grid-template-columns:minmax|padding-top:24px/);
 });

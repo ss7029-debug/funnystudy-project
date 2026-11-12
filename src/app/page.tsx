@@ -10,7 +10,7 @@ import { DEMOGRAPHIC_SKIPS_COOKIE, readDemographicSkips } from "@/lib/demographi
 import { buildNotificationPreferencesPath, fetchNotificationPreferences, NOTIFICATION_SKIPS_COOKIE, readNotificationSkips } from "@/lib/notification-preferences";
 import { fetchPublicStudyIdentities } from "@/lib/studies";
 import { createClient } from "@/lib/supabase/server";
-import { fetchStudyParticipations, getStudyStatus } from "@/lib/study-participation";
+import { fetchStudyParticipations, getPastStudyRowLabel, getStudyStatus } from "@/lib/study-participation";
 import type { StudyStatus } from "@/lib/study-participation";
 import type { TablesUpdate } from "@/types/supabase";
 
@@ -114,8 +114,13 @@ export default async function Home({
         id="home-content"
         key={category ?? "map"}
         className="progress-scroll"
+        style={category ? { scrollbarGutter: "stable" } : undefined}
       >
-        <div className="progress-content">
+        <div className="progress-content" style={category ? {
+          width: "100%",
+          paddingTop: "24px",
+          paddingInline: "clamp(24px, 2vw, 32px)",
+        } : undefined}>
           {studyIdentitiesError ? (
             <div className="glass-panel rounded-2xl p-6 text-center sm:p-8">
               <h1 className="text-2xl font-bold text-[var(--error-text)]">
@@ -130,12 +135,19 @@ export default async function Home({
               We couldn&apos;t load your study completion status. Please refresh to try again.
             </p>
           ) : (
-            <StudyDashboard category={category} studies={studyIdentities.map((study) => ({
-              id: study.id,
-              start_datetime_utc: study.start_datetime_utc,
-              end_datetime_utc: study.end_datetime_utc,
-              status: getStudyStatus(study, participationByStudy.get(study.id), studyNow),
-            }))} />
+            <StudyDashboard category={category} studies={studyIdentities.map((study) => {
+              const participation = participationByStudy.get(study.id);
+              const status = getStudyStatus(study, participation, studyNow);
+              return {
+                id: study.id,
+                start_datetime_utc: study.start_datetime_utc,
+                end_datetime_utc: study.end_datetime_utc,
+                status,
+                pastStudyLabel: status === "Missed"
+                  ? getPastStudyRowLabel(study, participation, user.id, studyNow)
+                  : undefined,
+              };
+            })} />
           )}
         </div>
       </main>

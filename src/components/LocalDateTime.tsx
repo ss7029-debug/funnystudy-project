@@ -6,7 +6,7 @@ const subscribe = () => () => {};
 const getDeviceTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const getServerTimeZone = () => "UTC";
 
-export function LocalDateTime({ value }: { value: string }) {
+export function LocalDateTime({ value, format = "full" }: { value: string; format?: "full" | "compact" | "date" }) {
   // Keep SSR and initial hydration identical, then use the device's timezone.
   const timeZone = useSyncExternalStore(
     subscribe,
@@ -14,14 +14,14 @@ export function LocalDateTime({ value }: { value: string }) {
     getServerTimeZone
   );
   const formatted = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
+    weekday: format === "full" ? "long" : undefined,
     year: "numeric",
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+    hour: format === "date" ? undefined : "numeric",
+    minute: format === "date" ? undefined : "2-digit",
     timeZone,
-    timeZoneName: "short",
+    timeZoneName: format === "date" ? undefined : "short",
   }).format(new Date(value));
 
   return <time dateTime={value}>{formatted}</time>;
