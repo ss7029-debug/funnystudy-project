@@ -1,11 +1,14 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import cardStyles from "./StudyCards.module.css";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CalendarDaysIcon,
   CheckCircleIcon,
   ClockIcon,
+  ExclamationCircleIcon,
+  MinusCircleIcon,
   PlayIcon,
 } from "@heroicons/react/24/outline";
 import { LocalDateTime } from "@/components/LocalDateTime";
@@ -37,23 +40,28 @@ const categoryLabels: Record<StudyStatus, string> = {
   Completed: "Completed", Active: "Active", Missed: "Missed", Upcoming: "Upcoming",
 };
 
-// Keep the critical category presentation on the actual rendered cells/controls.
-// This also prevents an older shared stylesheet from restoring muted cell text.
-const bodyCellStyle: CSSProperties = {
-  color: "var(--progress-ink)",
-  fontSize: "1rem",
-  fontWeight: 600,
-  fontStyle: "normal",
-  fontVariantNumeric: "tabular-nums",
-  textAlign: "center",
-};
-const columnHeaderStyle: CSSProperties = {
-  width: "25%",
-  backgroundColor: "var(--progress-table-header, #61452f)",
-  color: "var(--progress-table-header-text, #fff8e8)",
-  fontSize: "1.0625rem",
-  fontWeight: 750,
-  textAlign: "center",
+const statusBadges = {
+  Completed: { icon: CheckCircleIcon, tone: "completed" },
+  Active: { icon: PlayIcon, tone: "active" },
+  Upcoming: { icon: CalendarDaysIcon, tone: "upcoming" },
+  Missed: { icon: ExclamationCircleIcon, tone: "missed" },
+  "Not Applicable": { icon: MinusCircleIcon, tone: "not-applicable" },
+  Past: { icon: ClockIcon, tone: "past" },
+} as const;
+
+const statusGuide = [
+  { label: "Missed", meaning: "Confirmed missed opportunity" },
+  { label: "Past", meaning: "Eligibility uncertain" },
+  { label: "Not Applicable", meaning: "Confirmed ineligible" },
+] as const;
+
+// Intrinsic icon bounds and basic containment survive even a missing CSS asset.
+const iconStyle: CSSProperties = { width: 18, height: 18, minWidth: 18, maxWidth: 18, minHeight: 18, maxHeight: 18, flex: "0 0 18px", display: "block" };
+const cardStyle: CSSProperties = {
+  display: "block", height: "100%", minWidth: 0, padding: "1.2rem",
+  border: "1px solid var(--study-card-border, var(--progress-border, #d3bd94))",
+  borderRadius: "1.2rem", backgroundColor: "var(--study-card-background, var(--progress-paper, #fffcf4))",
+  color: "var(--progress-ink, #34291e)", overflowWrap: "anywhere",
 };
 
 export function StudyDashboard({ studies, category = null }: { studies: DashboardStudy[]; category?: StudyStatus | null }) {
@@ -101,38 +109,62 @@ export function StudyDashboard({ studies, category = null }: { studies: Dashboar
         <h1 id="study-category-heading">{heading}</h1>
         <p className="progress-study-total">Total Studies: {visibleStudies.length}</p>
       </header>
+      <aside className={cardStyles.legend} aria-labelledby="study-status-guide" style={{ gridColumn: 2, minWidth: 0 }}>
+        <h2 id="study-status-guide">Possible study statuses</h2>
+        <p>Guide for closed, unfinished studies. These examples are not your study results.</p>
+        <dl>
+          {statusGuide.map(({ label, meaning }) => {
+            const { icon: Icon, tone } = statusBadges[label];
+            return (
+              <div key={label}>
+                <dt><span className={`progress-badge progress-badge-${tone}`}>
+                  <Icon aria-hidden="true" width={18} height={18} style={iconStyle} />
+                  <span>{label}</span>
+                </span></dt>
+                <dd>{meaning}</dd>
+              </div>
+            );
+          })}
+        </dl>
+      </aside>
       {visibleStudies.length === 0 ? (
         <p className="progress-empty" style={{ gridColumn: 2, minWidth: 0 }}>{emptyMessages[category]}</p>
       ) : (
-        <div className="progress-table-scroll" role="region" aria-label={`${heading} table; scroll horizontally for all columns`} tabIndex={0} style={{ gridColumn: 2, minWidth: 0 }}>
-          <table className="progress-table">
-            <caption className="sr-only">{heading}, with availability dates and statuses</caption>
-            <thead>
-              <tr>
-                <th scope="col" style={columnHeaderStyle}>Study #</th>
-                <th scope="col" style={columnHeaderStyle}>Available From</th>
-                <th scope="col" style={columnHeaderStyle}>Available Until</th>
-                <th scope="col" style={columnHeaderStyle}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleStudies.map((study, index) => {
-                const canOpen = study.status === "Active" || study.status === "Completed";
-
-                return (
-                  <tr key={study.id}>
-                    <th scope="row" className="progress-table-number" style={bodyCellStyle}>
-                      {canOpen ? <Link href={`/study/${study.id}`} prefetch={false} className="progress-table-link" aria-label={`Open study ${index + 1}`}>{index + 1}</Link> : index + 1}
-                    </th>
-                    <td style={bodyCellStyle}>{study.start_datetime_utc ? <LocalDateTime value={study.start_datetime_utc} format="date" /> : "No start date"}</td>
-                    <td style={bodyCellStyle}>{study.end_datetime_utc ? <LocalDateTime value={study.end_datetime_utc} format="date" /> : "No end date"}</td>
-                    <td className="progress-table-status" style={bodyCellStyle}>{study.status === "Missed" ? study.pastStudyLabel ?? "Past" : categoryLabels[study.status]}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <ul className={`progress-study-list ${cardStyles.cards}`} aria-label={heading} style={{ gridColumn: 2, minWidth: 0 }}>
+          {visibleStudies.map((study, index) => {
+            const canOpen = study.status === "Active" || study.status === "Completed";
+            const label = study.status === "Missed" ? study.pastStudyLabel ?? "Past" : study.status;
+            const { icon: StatusIcon, tone } = statusBadges[label];
+            const content = (
+              <>
+                <div className="progress-card-heading" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: ".65rem", marginBottom: "1rem" }}>
+                  <h2 style={{ display: "inline-flex", alignItems: "center", gap: ".5rem", fontSize: "1.1rem", fontWeight: 700 }}>Study {index + 1}{canOpen ? <ArrowRightIcon aria-hidden="true" className="progress-card-arrow" width={18} height={18} style={iconStyle} /> : null}</h2>
+                  <span className={`progress-badge progress-badge-${tone}`} style={{ display: "inline-flex", alignItems: "center", gap: ".4rem", maxWidth: "100%", padding: ".35rem .65rem", borderRadius: ".65rem", fontSize: ".85rem", fontWeight: 650, lineHeight: 1.4 }}>
+                    <StatusIcon aria-hidden="true" width={18} height={18} style={iconStyle} />
+                    <span className="progress-card-status">{label}</span>
+                  </span>
+                </div>
+                <dl className="progress-card-dates" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "1rem", lineHeight: 1.5 }}>
+                  <div>
+                    <dt>Available From</dt>
+                    <dd>{study.start_datetime_utc ? <LocalDateTime value={study.start_datetime_utc} format="date" /> : "No start date"}</dd>
+                  </div>
+                  <div>
+                    <dt>Available Until</dt>
+                    <dd>{study.end_datetime_utc ? <LocalDateTime value={study.end_datetime_utc} format="date" /> : "No end date"}</dd>
+                  </div>
+                </dl>
+              </>
+            );
+            return (
+              <li key={study.id} style={{ minWidth: 0 }}>
+                {canOpen ? (
+                  <Link href={`/study/${study.id}`} prefetch={false} className="progress-study-card progress-study-card-link" style={cardStyle} aria-label={`${study.status === "Completed" ? "View results for" : "Open"} study ${index + 1}`}>{content}</Link>
+                ) : <div className="progress-study-card" style={cardStyle}>{content}</div>}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );

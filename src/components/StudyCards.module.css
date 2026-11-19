@@ -1,0 +1,122 @@
+.cards,
+.legend {
+  --study-green-accent: #c4dfb5;
+  --badge-missed-bg: #fbe5e5;
+  --badge-missed-ink: #8a343d;
+  --badge-neutral-bg: #eae6ef;
+  --badge-neutral-ink: #5b5265;
+  --badge-past-bg: #f6e6c1;
+  --badge-past-ink: #665037;
+  --badge-completed-bg: var(--progress-completed);
+  --badge-completed-ink: #5b4c29;
+  --badge-active-bg: var(--progress-active);
+  --badge-active-ink: #66490b;
+  --badge-upcoming-bg: var(--progress-upcoming);
+  --badge-upcoming-ink: #605338;
+}
+:global(:root[data-theme="dark"]) :is(.cards, .legend) {
+  --study-green-accent: #34482c;
+  --badge-missed-bg: #4b2930;
+  --badge-missed-ink: #f2b6bf;
+  --badge-neutral-bg: #37313f;
+  --badge-neutral-ink: #ddd1e7;
+  --badge-past-bg: #493a23;
+  --badge-past-ink: #f1d69c;
+  --badge-completed-bg: var(--progress-completed);
+  --badge-completed-ink: #eeddb5;
+  --badge-active-bg: var(--progress-active);
+  --badge-active-ink: #f7dfa0;
+  --badge-upcoming-bg: var(--progress-upcoming);
+  --badge-upcoming-ink: #dfd1b0;
+}
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"]):not([data-theme="dark"])) :is(.cards, .legend) {
+    --study-green-accent: #34482c;
+    --badge-missed-bg: #4b2930;
+    --badge-missed-ink: #f2b6bf;
+    --badge-neutral-bg: #37313f;
+    --badge-neutral-ink: #ddd1e7;
+    --badge-past-bg: #493a23;
+    --badge-past-ink: #f1d69c;
+    --badge-completed-bg: var(--progress-completed);
+    --badge-completed-ink: #eeddb5;
+    --badge-active-bg: var(--progress-active);
+    --badge-active-ink: #f7dfa0;
+    --badge-upcoming-bg: var(--progress-upcoming);
+    --badge-upcoming-ink: #dfd1b0;
+  }
+}
+.cards { display: grid; gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.cards > li { min-width: 0; }
+/* Decorative sequence only: independent of category or eligibility labels.
+   These inherited variables also drive the cards' inline fallback styles. */
+.cards > li:nth-child(4n + 1) {
+  --study-card-background: var(--progress-completed);
+  --study-card-border: color-mix(in srgb, var(--progress-border) 80%, var(--progress-completed));
+}
+.cards > li:nth-child(4n + 2) {
+  --study-card-background: var(--progress-active);
+  --study-card-border: color-mix(in srgb, var(--progress-border) 80%, var(--progress-active));
+}
+.cards > li:nth-child(4n + 3) {
+  --study-card-background: var(--progress-missed);
+  --study-card-border: color-mix(in srgb, var(--progress-border) 80%, var(--progress-missed));
+}
+.cards > li:nth-child(4n) {
+  --study-card-background: color-mix(in srgb, var(--progress-upcoming) 45%, var(--study-green-accent));
+  --study-card-border: color-mix(in srgb, var(--progress-border) 80%, var(--study-green-accent));
+}
+.cards :global(.progress-study-card) {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  padding: 1.2rem;
+  border: 1px solid var(--progress-border);
+  border-radius: 1.2rem;
+  background: var(--progress-paper);
+  color: var(--progress-ink);
+  overflow-wrap: anywhere;
+}
+.cards :global(.progress-study-card-link) { transition: background-color 160ms ease, border-color 160ms ease; }
+.cards :global(.progress-card-heading) { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem; margin-bottom: 1rem; }
+.cards :global(.progress-card-heading) h2 { display: inline-flex; align-items: center; gap: .5rem; font-size: 1.1rem; font-weight: 700; }
+.cards :global(.progress-card-arrow) { width: 1rem; height: 1rem; flex-shrink: 0; }
+:is(.cards, .legend) :global(.progress-badge) { display: inline-flex; align-items: center; gap: .4rem; max-width: 100%; padding: .35rem .65rem; border-radius: .65rem; font-size: .85rem; font-weight: 650; line-height: 1.4; }
+:is(.cards, .legend) :global(.progress-badge) svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+:is(.cards, .legend) :global(.progress-badge-missed) { background: var(--badge-missed-bg); color: var(--badge-missed-ink); }
+:is(.cards, .legend) :global(.progress-badge-not-applicable) { background: var(--badge-neutral-bg); color: var(--badge-neutral-ink); }
+:is(.cards, .legend) :global(.progress-badge-past) { background: var(--badge-past-bg); color: var(--badge-past-ink); }
+:is(.cards, .legend) :global(.progress-badge-completed) { background: var(--badge-completed-bg); color: var(--badge-completed-ink); }
+:is(.cards, .legend) :global(.progress-badge-active) { background: var(--badge-active-bg); color: var(--badge-active-ink); }
+:is(.cards, .legend) :global(.progress-badge-upcoming) { background: var(--badge-upcoming-bg); color: var(--badge-upcoming-ink); }
+.cards :global(.progress-card-dates) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; line-height: 1.5; }
+.cards :global(.progress-card-dates) > div { min-width: 0; }
+.cards :global(.progress-card-dates) dt { margin-bottom: .25rem; color: var(--progress-muted); font-size: .85rem; font-weight: 550; }
+.cards :global(.progress-card-dates) dd { font-size: .95rem; font-weight: 600; }
+@media (min-width: 48rem) {
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (hover: hover) {
+  .cards :global(.progress-study-card-link):hover {
+    --study-card-border: var(--progress-line);
+    --study-card-background: var(--progress-completed);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cards :global(.progress-study-card-link) { transition: none; }
+}
+
+.legend {
+  margin-bottom: 1.5rem;
+  padding: .85rem 1rem;
+  border: 1px solid var(--progress-border);
+  border-radius: 1rem;
+  background: var(--progress-paper);
+  color: var(--progress-ink);
+}
+.legend h2 { font-size: .95rem; font-weight: 700; }
+.legend > p { margin-top: .2rem; font-size: .8rem; color: var(--progress-muted); }
+.legend dl { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; margin-top: .75rem; }
+.legend dl > div { display: flex; flex: 1 1 11rem; min-width: 0; flex-direction: column; align-items: flex-start; gap: .35rem; }
+.legend dd { font-size: .8rem; color: var(--progress-muted); }

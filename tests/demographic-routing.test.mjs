@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -45,6 +46,7 @@ function createDashboardHarness() {
   let lastProps;
   const dashboard = loadModule("src/components/StudyDashboard.tsx", {
     "@/components/LocalDateTime": loadModule("src/components/LocalDateTime.tsx"),
+    "./StudyCards.module.css": { default: { cards: "study-cards-scope", legend: "study-status-legend" } },
   });
   const Component = (props) => {
     lastProps = props;
@@ -500,10 +502,10 @@ test("home lists public studies across all dates after demographics and links to
   });
   const html = renderToStaticMarkup(await scenario.home({}));
   assert.match(html, /id="my-progress-heading"/);
-  assert.doesNotMatch(html, /<li>|href="\/study\//);
+  assert.doesNotMatch(html, /<li(?: [^>]*)?>|href="\/study\//);
   const categoryHtml = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category: "active" }) }));
-  assert.match(categoryHtml, /href="\/study\/1"[^>]*>1<\/a>/);
-  assert.match(categoryHtml, /href="\/study\/5"[^>]*>2<\/a>/);
+  assert.match(categoryHtml, /href="\/study\/1"[^>]*><div class="progress-card-heading"[^>]*><h2[^>]*>Study 1</);
+  assert.match(categoryHtml, /href="\/study\/5"[^>]*><div class="progress-card-heading"[^>]*><h2[^>]*>Study 2</);
   assert.doesNotMatch(categoryHtml, /Description for study 1/);
   assert.deepEqual([...categoryHtml.matchAll(/dateTime="([^"]+)"/g)].map((match) => match[1]), [past, future]);
   assert.doesNotMatch(categoryHtml, /UTC<\/time>|AM<\/time>|PM<\/time>/);
@@ -578,9 +580,9 @@ test("home marks only the current user's started-and-ended studies Completed", a
     ],
   });
   const html = renderToStaticMarkup(await scenario.home({}));
-  assert.doesNotMatch(html, /<li>/);
+  assert.doesNotMatch(html, /<li(?: [^>]*)?>/);
   const activeHtml = scenario.dashboard.select("Active");
-  const cards = [...activeHtml.match(/<tbody>(.*?)<\/tbody>/)[1].matchAll(/<tr>(.*?)<\/tr>/g)].map((match) => match[1]);
+  const cards = [...activeHtml.matchAll(/<li(?: [^>]*)?>(.*?)<\/li>/g)].map((match) => match[1]);
   assert.equal(cards.length, 2);
   assert.ok(cards.every((card) => card.includes("Active")));
   assert.deepEqual(scenario.dashboard.studies.map(({ id, status }) => [id, status]), [[1, "Completed"], [2, "Active"], [3, "Active"]]);
@@ -712,20 +714,21 @@ test("past completions remain linked, while missed and upcoming cards have no li
   renderToStaticMarkup(await scenario.home({}));
   for (const [index, status] of ["Completed", "Missed", "Upcoming", "Active"].entries()) {
     const html = scenario.dashboard.select(status);
-    const cards = [...html.match(/<tbody>(.*?)<\/tbody>/)[1].matchAll(/<tr>(.*?)<\/tr>/g)].map((match) => match[1]);
+    const cards = [...html.matchAll(/<li(?: [^>]*)?>(.*?)<\/li>/g)].map((match) => match[1]);
     assert.equal(cards.length, 1);
     assert.match(html, /class="progress-study-total">Total Studies: 1<\/p>/);
-    assert.deepEqual([...html.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((match) => match[1]), ["Study #", "Available From", "Available Until", "Status"]);
-    assert.equal([...cards[0].matchAll(/<td(?: |>)|<th scope="row"/g)].length, 4);
+    assert.match(cards[0], /<dt>Available From<\/dt>/);
+    assert.match(cards[0], /<dt>Available Until<\/dt>/);
+    assert.doesNotMatch(html, /<table|class="progress-table/);
     assert.match(html, /Back to My Progress/);
     assert.doesNotMatch(html, /class="progress-eyebrow"|Study Name/);
     assert.doesNotMatch(html.replace(/dateTime="[^"]*"/g, ""), /\d{1,2}:\d{2}|UTC|EST|EDT/);
     assert.match(cards[0], new RegExp(`>${status === "Missed" ? "Past" : status}<`));
-    assert.match(cards[0], /scope="row" class="progress-table-number"[^>]*>(?:<a[^>]*>)?1</);
+    assert.match(cards[0], /<h2[^>]*>Study 1(?:<|<\/)/);
     if (status === "Completed" || status === "Active") {
       assert.match(cards[0], new RegExp(`href="/study/${index + 1}"`));
     } else {
-      assert.doesNotMatch(cards[0], /<a |<svg|hover:|tabindex|role="button"/);
+      assert.doesNotMatch(cards[0], /<a |progress-card-arrow|tabindex|role="button"/);
     }
   }
 });
@@ -735,7 +738,7 @@ test("participation failures do not invent statuses or show clickable cards", as
   const scenario = createScenario({ answered: [1, 2], studies: [studyRow(1)], participationLoadError: true });
   const html = renderToStaticMarkup(await scenario.home({}));
   assert.match(html, /role="alert"/);
-  assert.doesNotMatch(html, /Study categories|aria-pressed|<li>|href="\/study\//);
+  assert.doesNotMatch(html, /Study categories|aria-pressed|<li(?: [^>]*)?>|href="\/study\//);
 });
 
 test("dashboard retrieves studies and current-user completions beyond the first API page", async () => {
@@ -746,7 +749,7 @@ test("dashboard retrieves studies and current-user completions beyond the first 
   renderToStaticMarkup(await scenario.home({}));
   assert.equal(scenario.dashboard.studies.length, 1005);
   const html = scenario.dashboard.select("Completed");
-  assert.equal([...html.match(/<tbody>(.*?)<\/tbody>/)[1].matchAll(/<tr>/g)].length, 1005);
+  assert.equal([...html.matchAll(/<li(?: [^>]*)?>/g)].length, 1005);
   assert.match(html, /class="progress-study-total">Total Studies: 1005<\/p>/);
   assert.equal([...html.matchAll(/>Completed</g)].length, 1005);
   assert.equal(scenario.studyLoads, 2);
@@ -770,14 +773,14 @@ test("progress map has accurate counts and category links, with no study list", 
     assert.match(links[index], new RegExp(`>${category}<`));
     assert.match(links[index], new RegExp(`class="progress-node-count">${count}<`));
   }
-  assert.doesNotMatch(initial, /<li>|dateTime=|study-category-heading/);
+  assert.doesNotMatch(initial, /<li(?: [^>]*)?>|dateTime=|study-category-heading/);
   assert.match(initial, /progress-connector[^>]*aria-hidden="true"/);
   for (const category of ["Missed", "Completed", "Upcoming", "Active"]) {
     const html = dashboard.select(category);
     assert.match(html, new RegExp(`>${category} Studies<`));
     assert.match(html, /href="\/"[^>]*>.*Back to My Progress<\/a>/);
     assert.doesNotMatch(html, /aria-label="Study categories"/);
-    const numbers = [...html.matchAll(/scope="row" class="progress-table-number"[^>]*>(?:<a[^>]*>)?(\d+)</g)].map((match) => Number(match[1]));
+    const numbers = [...html.matchAll(/<h2[^>]*>Study (\d+)</g)].map((match) => Number(match[1]));
     assert.deepEqual(numbers, studies.filter((study) => study.status === category).map((_, index) => index + 1));
   }
   const active = dashboard.select("Active");
@@ -800,7 +803,7 @@ test("empty category views have helpful messages and a back link", () => {
     assert.ok(html.includes(message));
     assert.match(html, /class="progress-study-total">Total Studies: 0<\/p>/);
     assert.match(html, /href="\/"[^>]*>.*Back to My Progress<\/a>/);
-    assert.doesNotMatch(html, /<li>|href="\/study\//);
+    assert.doesNotMatch(html, /<li(?: [^>]*)?>|href="\/study\//);
   }
 });
 
@@ -816,27 +819,21 @@ test("category URLs open the right view and back links return to a list-free map
   for (const category of [undefined, "invalid", "__proto__", "constructor", ["active", "missed"]]) {
     const html = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category }) }));
     assert.match(html, /id="my-progress-heading"/);
-    assert.doesNotMatch(html, /<li>|study-category-heading/);
+    assert.doesNotMatch(html, /<li(?: [^>]*)?>|study-category-heading/);
   }
   assert.deepEqual(scenario.captionLoads, []);
 });
 
 
-test("category tables show sequential linked numbers, date-only availability, and statuses", async () => {
-  const scenario = createScenario({ answered: [1, 2], studies: [
-    studyRow(91, { slug: "  Caption Comedy  " }),
-    studyRow(305, { slug: null }),
-    studyRow(407, { slug: "" }),
-  ] });
+test("category cards preserve sequential numbers, original study links, dates and statuses", async () => {
+  const scenario = createScenario({ answered: [1, 2], studies: [studyRow(91), studyRow(305), studyRow(407)] });
   const html = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category: "active" }) }));
-  assert.deepEqual([...html.matchAll(/<th scope="col"[^>]*>(.*?)<\/th>/g)].map((match) => match[1]), ["Study #", "Available From", "Available Until", "Status"]);
-  assert.deepEqual([...html.matchAll(/class="progress-table-number"[^>]*>(?:<a[^>]*>)?(\d+)</g)].map((match) => Number(match[1])), [1, 2, 3]);
-  assert.match(html, /href="\/study\/91"[^>]*>1<\/a>/);
-  assert.match(html, /href="\/study\/305"[^>]*>2<\/a>/);
-  assert.match(html, /href="\/study\/407"[^>]*>3<\/a>/);
-  assert.match(html, /role="region"[^>]*tabindex="0"/);
-  assert.match(html, /<caption class="sr-only">Active Studies/);
-  assert.doesNotMatch(html, /progress-study-list|<dl|<li>|Caption Comedy|Study Name|class="progress-eyebrow"/);
+  assert.deepEqual([...html.matchAll(/<h2[^>]*>Study (\d+)</g)].map((match) => Number(match[1])), [1, 2, 3]);
+  for (const id of [91, 305, 407]) assert.match(html, new RegExp(`href="/study/${id}"`));
+  assert.equal([...html.matchAll(/<dt>Available From<\/dt>/g)].length, 3);
+  assert.equal([...html.matchAll(/<dt>Available Until<\/dt>/g)].length, 3);
+  assert.equal([...html.matchAll(/class="progress-card-status">Active</g)].length, 3);
+  assert.doesNotMatch(html, /<table|class="progress-eyebrow"/);
 });
 
 test("compact dates omit weekday labels and preserve timezone and original timestamps", () => {
@@ -862,7 +859,7 @@ test("Missed naming and category classification remain intact", () => {
   const past = dashboard.select("Missed");
   assert.match(past, /id="study-category-heading">Missed Studies<\/h1>/);
   assert.match(past, />Past</);
-  assert.doesNotMatch(past, /Past Studies|Not Applicable|href="\/study\/1"/);
+  assert.doesNotMatch(past, /Past Studies|href="\/study\/1"/);
   assert.equal(dashboard.studies[0].status, "Missed");
 });
 
@@ -928,14 +925,14 @@ test("home uses actual participation evidence for row labels without changing ca
   assert.match(missedLink, /class="progress-node-count">4</);
   assert.deepEqual(scenario.dashboard.studies.map(({ status }) => status), ["Missed", "Missed", "Missed", "Missed", "Completed"]);
   const html = renderToStaticMarkup(await scenario.home({ searchParams: Promise.resolve({ category: "missed" }) }));
-  const labels = [...html.matchAll(/class="progress-table-status"[^>]*>([^<]+)</g)].map((match) => match[1]);
+  const labels = [...html.matchAll(/class="progress-card-status"[^>]*>([^<]+)</g)].map((match) => match[1]);
   assert.deepEqual(labels, ["Past", "Missed", "Past", "Past"]);
   assert.match(html, />Missed Studies</);
-  assert.doesNotMatch(html, /Not Applicable|href="\/study\//);
+  assert.doesNotMatch(html, /class="progress-card-status">Not Applicable<|href="\/study\//);
   assert.deepEqual(scenario.captionLoads, []);
 });
 
-test("the table renders each past-study label without changing the Missed category count", () => {
+test("the cards render each past-study label without changing the Missed category count", () => {
   const dashboard = createDashboardHarness();
   // Presentation fixtures only; the production loader has no verified join-date source.
   const labels = ["Not Applicable", "Missed", "Past"];
@@ -943,7 +940,7 @@ test("the table renders each past-study label without changing the Missed catego
   const map = dashboard.render(studies);
   assert.match(map, /class="progress-node-count">3</);
   const table = dashboard.select("Missed");
-  assert.deepEqual([...table.matchAll(/class="progress-table-status"[^>]*>([^<]+)</g)].map((match) => match[1]), labels);
+  assert.deepEqual([...table.matchAll(/class="progress-card-status"[^>]*>([^<]+)</g)].map((match) => match[1]), labels);
   assert.doesNotMatch(table, /href="\/study\//);
 });
 
@@ -952,19 +949,9 @@ test("category presentation is applied directly to the rendered elements despite
   const dashboard = createDashboardHarness();
   dashboard.render([{ ...studyRow(1), status: "Active" }]);
   const html = dashboard.select("Active");
-  const body = html.match(/<tbody>(.*?)<\/tbody>/)[1];
-  const styles = [...body.matchAll(/<(?:th|td)[^>]*style="([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(styles.length, 4);
-  assert.equal(new Set(styles).size, 1, "all four body cells share the exact same presentation");
-  for (const declaration of ["color:var(--progress-ink)", "font-size:1rem", "font-weight:600", "text-align:center"]) assert.ok(styles[0].includes(declaration));
-  const headings = [...html.matchAll(/<th scope="col"[^>]*style="([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(headings.length, 4);
-  for (const style of headings) {
-    assert.ok(style.includes("font-size:1.0625rem"));
-    assert.ok(style.includes("text-align:center"));
-    assert.ok(style.includes("background-color:var(--progress-table-header, #61452f)"));
-    assert.ok(style.includes("color:var(--progress-table-header-text, #fff8e8)"));
-  }
+  assert.match(html, /class="progress-study-list study-cards-scope"/);
+  assert.match(html, /progress-badge-active/);
+  assert.doesNotMatch(html, /<table/);
   const back = html.match(/<a[^>]*class="progress-back"[^>]*>/)[0];
   assert.match(back, /grid-column:1 \/ -1/);
   assert.match(back, /background-color:var\(--progress-table-header, #61452f\)/);
@@ -976,4 +963,76 @@ test("category presentation is applied directly to the rendered elements despite
   const map = renderToStaticMarkup(await scenario.home({}));
   assert.match(map, /class="progress-content">/);
   assert.doesNotMatch(map, /grid-template-columns:minmax|padding-top:24px/);
+});
+
+
+test("Iteration 3 preserves the Iteration 2 homepage markup exactly", () => {
+  const baseline = execFileSync("git", ["show", "58c7ad3:src/components/StudyDashboard.tsx"], { encoding: "utf8" });
+  const old = { exports: {} };
+  const compiled = ts.transpileModule(baseline, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  new Function("require", "module", "exports", compiled)((name) => name === "@/components/LocalDateTime" ? loadModule("src/components/LocalDateTime.tsx") : require(name), old, old.exports);
+  const studies = ["Completed", "Active", "Missed", "Upcoming"].map((status, index) => ({ ...studyRow(index + 1), status }));
+  const expected = renderToStaticMarkup(require("react").createElement(old.exports.StudyDashboard, { studies }));
+  assert.equal(createDashboardHarness().render(studies), expected);
+});
+
+test("all six badge styles include a decorative icon and a readable text label", () => {
+  const dashboard = createDashboardHarness();
+  for (const [status, label, tone] of [["Completed", "Completed", "completed"], ["Active", "Active", "active"], ["Upcoming", "Upcoming", "upcoming"], ["Missed", "Missed", "missed"], ["Missed", "Past", "past"], ["Missed", "Not Applicable", "not-applicable"]]) {
+    dashboard.render([{ ...studyRow(1), status, pastStudyLabel: label }]);
+    const html = dashboard.select(status);
+    assert.match(html, new RegExp(`progress-badge-${tone}`));
+    assert.match(html, new RegExp(`class="progress-card-status">${label}<`));
+    assert.match(html, /aria-hidden="true"/);
+    if (status === "Missed" || status === "Upcoming") assert.doesNotMatch(html, /href="\/study\//);
+  }
+});
+
+
+test("every card icon has intrinsic and inline bounds even without its stylesheet", () => {
+  const dashboard = createDashboardHarness();
+  for (const [status, label] of [["Completed", "Completed"], ["Active", "Active"], ["Upcoming", "Upcoming"], ["Missed", "Past"], ["Missed", "Missed"], ["Missed", "Not Applicable"]]) {
+    dashboard.render([{ ...studyRow(1), status, pastStudyLabel: label }]);
+    const html = dashboard.select(status);
+    const card = html.match(/<li[^>]*>(.*?)<\/li>/)[1];
+    const icons = [...card.matchAll(/<svg[^>]*>/g)].map((match) => match[0]);
+    assert.ok(icons.length >= 1);
+    for (const icon of icons) {
+      assert.match(icon, /width="18"/);
+      assert.match(icon, /height="18"/);
+      for (const bound of ["width:18px", "height:18px", "max-width:18px", "max-height:18px", "flex:0 0 18px"]) assert.ok(icon.includes(bound));
+    }
+    assert.match(card, /border-radius:1.2rem/);
+    assert.match(card, /padding:1.2rem/);
+    assert.match(card, /overflow-wrap:anywhere/);
+    assert.match(card, /class="progress-card-heading" style="[^"]*display:flex/);
+    assert.match(card, /class="progress-card-dates" style="[^"]*display:grid/);
+    assert.match(card, /Available From/);
+    assert.match(card, /Available Until/);
+  }
+});
+
+
+test("status legend explains all possible labels separately from real study results", () => {
+  const dashboard = createDashboardHarness();
+  for (const category of ["Completed", "Active", "Missed", "Upcoming"]) {
+    dashboard.render([{ ...studyRow(1), status: category }]);
+    const html = dashboard.select(category);
+    const guide = html.match(/<aside[^>]*>(.*?)<\/aside>/)[1];
+    assert.match(guide, /Possible study statuses/);
+    assert.match(guide, /not your study results/);
+    for (const [label, meaning] of [["Missed", "Confirmed missed opportunity"], ["Past", "Eligibility uncertain"], ["Not Applicable", "Confirmed ineligible"]]) {
+      assert.ok(guide.includes(label));
+      assert.ok(guide.includes(meaning));
+    }
+    assert.equal([...guide.matchAll(/<svg[^>]*width="18"[^>]*height="18"/g)].length, 3);
+    assert.doesNotMatch(guide, /progress-card-status|href=|<li/);
+    const actual = [...html.matchAll(/class="progress-card-status">([^<]+)</g)].map((match) => match[1]);
+    assert.deepEqual(actual, [category === "Missed" ? "Past" : category]);
+    assert.ok(html.indexOf("Total Studies: 1") < html.indexOf("<aside"));
+    assert.ok(html.indexOf("</aside>") < html.indexOf('<ul class="progress-study-list'));
+    const empty = dashboard.render([], category);
+    assert.match(empty, /Possible study statuses/);
+    assert.doesNotMatch(empty, /progress-card-status/);
+  }
 });
